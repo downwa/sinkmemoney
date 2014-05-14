@@ -3,8 +3,9 @@
 require 'simple_html_dom.php';
 
 $ini = parse_ini_file("/etc/sinkmemoney.conf");
-$url0='https://secure.bankofamerica.com/login/sign-in/signOnScreen.go';
-$url1="https://secure.bankofamerica.com/login/sign-in/internal/entry/signOn.go";
+$baseurl="https://secure.bankofamerica.com";
+$url0=$baseurl."/login/sign-in/signOnScreen.go";
+$url1=$baseurl."/login/sign-in/internal/entry/signOn.go";
 
 /* FORM:
 method="post" action="/login/sign-in/internal/entry/signOn.go"
@@ -20,6 +21,16 @@ method="post" action="/login/sign-in/internal/entry/signOn.go"
 $defheaders =	"User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:28.0) Gecko/20100101 Firefox/28.0\r\n".
 		"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n".
 		"Accept-Language: en-US,en;q=0.5\r\n";
+
+function cookies($headers) {
+	$str = "";
+	foreach($headers as $header) {
+		if(substr($header,0,11) == "Set-Cookie:") {
+			$str=$str.substr($header,4)."\r\n";
+		}
+	}
+	return $str;
+}
 
 // Create DOM from URL
 $request = array('http' => array('method' => 'GET', 'header' => $defheaders));
@@ -48,9 +59,24 @@ $request = array(
 
 $context = stream_context_create($request);
 // $url, $use_include_path = false, $context=null, $offset = -1, $maxLen=-1, $lowercase = true, $forceTagsClosed=true, $target_charset = DEFAULT_TARGET_CHARSET, $stripRN=true, $defaultBRText=DEFAULT_BR_TEXT, $defaultSpanText=DEFAULT_SPAN_TEXT, &$headers
-$headers="";
+$headers=array();
 $html = file_get_html($url1, false, $context, -1, -1, true, true, DEFAULT_TARGET_CHARSET, true, DEFAULT_BR_TEXT, DEFAULT_SPAN_TEXT, $headers);
-var_dump($headers);
+//var_dump($headers);
+echo "headers=".cookies($headers);
+$url2="";
+foreach($html->find('meta') as $meta) {
+	$attrs = $meta->getAllAttributes();
+	if($attrs['http-equiv'] == "refresh") {
+		$urls=explode(";",$meta->content);
+		$url2=$baseurl.substr($urls[1],4); break;
+	}
+}
+if($url2 == "") { die("No refresh URL: ".$html); }
+
+/*** NEXT STEP ***/
+$request = array('http' => array('method' => 'GET', 'header' => $defheaders.cookies($headers)));
+$context = stream_context_create($request);
+$html = file_get_html($url2, false, $context);
 echo "got $html";
 
 // Find all article blocks
