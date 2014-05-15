@@ -32,10 +32,50 @@ function cookies($headers) {
 	return $str;
 }
 
+/** Input  : url, form variables, cookies
+    Output : cookies, forms
+    Method (GET,POST,etc.) is determined by form->method **/
+function httpRequest($url, $form, &$cookies, &$forms) {
+	echo "httpRequest: $url\n";
+	
+}
+
+function initVars() {
+	global $argv,$method,$query,$vars;
+	$argv=array();
+	$method="GET";
+	$query="";
+	$vars=array();
+	if(isset($_SERVER['REQUEST_METHOD'])) {
+		$method=$_SERVER['REQUEST_METHOD'];
+		$query=$_SERVER['QUERY_STRING'];
+		$argv=explode('&', $query);
+	}
+	else { $argv=$_SERVER['argv']; }
+	$count=0;
+	foreach($argv as &$chunk) {
+		$param = explode("=", $chunk);
+		$vars[urldecode($param[0])] = isset($param[1]) ? urldecode($param[1]) : "";
+		$count=$count+1;
+	}
+	echo "<pre>";
+	echo $method." VARS:\n";
+	foreach($vars as $key => $val) {
+		echo "  ".$key."=".$val."\n";
+	}
+	echo "</pre>";
+}
+
+initVars();
+exit;
+
 // Create DOM from URL
 $request = array('http' => array('method' => 'GET', 'header' => $defheaders));
 $context = stream_context_create($request);
+
+echo "URL0=$url0\n";
 $html = file_get_html($url0, false, $context);
+echo "HTM0=$html\n";
 $csrfToken="";
 foreach($html->find('form#EnterOnlineIDForm') as $form) {
 	$csrfToken = $form->find('input#csrfTokenHidden', 0)->value;
@@ -56,11 +96,16 @@ $request = array(
     )),
 )
 );
+var_dump($request);
+exit;
 
 $context = stream_context_create($request);
 // $url, $use_include_path = false, $context=null, $offset = -1, $maxLen=-1, $lowercase = true, $forceTagsClosed=true, $target_charset = DEFAULT_TARGET_CHARSET, $stripRN=true, $defaultBRText=DEFAULT_BR_TEXT, $defaultSpanText=DEFAULT_SPAN_TEXT, &$headers
 $headers=array();
+
+echo "URL1=$url1\n";
 $html = file_get_html($url1, false, $context, -1, -1, true, true, DEFAULT_TARGET_CHARSET, true, DEFAULT_BR_TEXT, DEFAULT_SPAN_TEXT, $headers);
+echo "HTM1=$html\n";
 //var_dump($headers);
 echo "headers=".cookies($headers);
 $url2="";
@@ -76,8 +121,29 @@ if($url2 == "") { die("No refresh URL: ".$html); }
 /*** NEXT STEP ***/
 $request = array('http' => array('method' => 'GET', 'header' => $defheaders.cookies($headers)));
 $context = stream_context_create($request);
+
+echo "URL2=$url2\n";
 $html = file_get_html($url2, false, $context);
-echo "got $html";
+echo "HTM2=$html\n";
+/** Check for challenge **/
+foreach($html->find('input#tlpvt-challenge-answer') as $input) {
+	/** Which question? **/
+	foreach($html->find('label') as $label) {
+/*		if($label->for == 'tlpvt-challenge-answer') {
+			for($xa=1; $xa<10; $xa++) {
+				//$input->value = trim($label->innertext).'@'.trim($ini['q'.$xa]).'@@@';
+				break;
+				if(strstr(trim($label->innertext), trim($ini['q'.$xa])) === true) {
+					//$input->value = $ini['a'.$xa];
+				}
+			}
+		}
+*/
+	}
+}
+foreach($html->find('form') as $form) {
+	echo $form;
+}
 
 // Find all article blocks
 /*foreach($html->find('div.article') as $article) {
