@@ -93,9 +93,9 @@ function savedCookies($url) {
 	$plen=count($prefix);
 	foreach($cookies as $key => $val) {
 		// FIXME: do subset
-		if(substr($key,0,$plen) == $prefix) {
+//		if(substr($key,0,$plen) == $prefix) {
 			$str=$str."Cookie: ".$key."=".$val."\r\n";
-		}
+//		}
 	}
 	return $str;
 }
@@ -176,15 +176,12 @@ function fixups($html) {
 	}
 	/** FIXUP META content url **/
 	foreach($html->find('meta') as $meta) {
-		$link->href = mergeUrl($vars['sinkmeurl'],$link->href);
-	}
-	
-	foreach($html->find('meta') as $meta) {
 		$attrs = $meta->getAllAttributes();
 		if($attrs['http-equiv'] == "refresh") {
 			$urls=explode(";",$meta->content);
 			$url=$baseurl.substr($urls[1],4);
-			$meta->content = $urls[0].';'.mergeUrl($vars['sinkmeurl'],$url);
+			$tgt['query'] = 'sinkmeurl='.urlencode(mergeUrl($vars['sinkmeurl'],$url));
+			$meta->content = $urls[0].';'.join_url($tgt,false);
 		}
 	}
 	/** FIXUP LINK href **/
