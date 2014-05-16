@@ -1,8 +1,20 @@
 <?php
 
 require 'simple_html_dom.php';
+require 'spliturl/join_url.php';
+require 'spliturl/split_url.php';
 
-$ini = parse_ini_file("/etc/sinkmemoney.conf");
+/*$url = 'http://username:password@hostname:1234/path?arg=value&url=http://elsewhere.com#anchor';
+$url = '//username:password@hostname:1234/path?arg=value&url=http://elsewhere.com#anchor';
+//$url = '/path?arg=value#anchor';
+$s = split_url($url);
+print_r($s);
+$s['host']='localhost';
+$s['scheme']='https';
+echo join_url($s,true)."\n";
+exit;
+*/
+//$ini = parse_ini_file("/etc/sinkmemoney.conf");
 $baseurl="https://secure.bankofamerica.com";
 $url0=$baseurl."/login/sign-in/signOnScreen.go";
 $url1=$baseurl."/login/sign-in/internal/entry/signOn.go";
@@ -22,7 +34,47 @@ $defheaders =	"User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:28.0) Gecko/
 		"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n".
 		"Accept-Language: en-US,en;q=0.5\r\n";
 
-function cookies($headers) {
+global $argv,$method,$query,$vars,$cookies;
+
+function initVars() {
+	global $argv,$method,$query,$vars,$cookies;
+	$argv=array();
+	$method="GET";
+	$query="";
+	$vars=array();
+	$cookies=$_COOKIE;
+	$count=1; // Pretend we've already passed the first argument (for the web)
+	if(isset($_SERVER['REQUEST_METHOD'])) {
+		$method=$_SERVER['REQUEST_METHOD'];
+		$query=$_SERVER['QUERY_STRING'];
+		if($query != "") { $argv=explode('&', $query); }
+	}
+	else { $count=0; $argv=$_SERVER['argv']; }
+	foreach($argv as &$chunk) {
+		if($count == 0) { $count=1; continue; } // Skip the first argument (on command line)
+		$param = explode("=", $chunk);
+		$vars[urldecode($param[0])] = isset($param[1]) ? urldecode($param[1]) : "";
+		$count=$count+1;
+	}
+	/** Override QUERY variables with POST variables (if any) **/
+	if(isset($_POST)) {
+		foreach($_POST as $key => $val) { $vars[$key]=$val; }
+	}
+	/******************************** DEBUG OUTPUT *********************************/
+	echo "<pre>";
+	echo $method." VARS:\n";
+	foreach($vars as $key => $val) {
+		echo "  ".$key."=".$val."\n";
+	}
+	echo "COOKIES:\n";
+	foreach($cookies as $key => $val) {
+		echo "  ".$key."=".$val."\n";
+	}
+	echo "</pre>";
+}
+
+/** RETURNS cookies string from headers containing cookies **/
+function headerCookies($headers) {
 	$str = "";
 	foreach($headers as $header) {
 		if(substr($header,0,11) == "Set-Cookie:") {
@@ -32,45 +84,144 @@ function cookies($headers) {
 	return $str;
 }
 
-/** Input  : url, form variables, cookies
-    Output : cookies, forms
-    Method (GET,POST,etc.) is determined by form->method **/
-function httpRequest($url, $form, &$cookies, &$forms) {
-	echo "httpRequest: $url\n";
-	
+/** RETURNS cookies string from subset of global $cookies matching $url domain **/
+function savedCookies($url) {
+	global $cookies;
+	$str = "";
+	$purl = parse_url($url);
+	$prefix="SITE:".$purl['host']."@";
+	$plen=count($prefix);
+	foreach($cookies as $key => $val) {
+		// FIXME: do subset
+		if(substr($key,0,$plen) == $prefix) {
+			$str=$str."Cookie: ".$key."=".$val."\r\n";
+		}
+	}
+	return $str;
 }
 
-function initVars() {
-	global $argv,$method,$query,$vars;
-	$argv=array();
-	$method="GET";
-	$query="";
-	$vars=array();
-	if(isset($_SERVER['REQUEST_METHOD'])) {
-		$method=$_SERVER['REQUEST_METHOD'];
-		$query=$_SERVER['QUERY_STRING'];
-		$argv=explode('&', $query);
-	}
-	else { $argv=$_SERVER['argv']; }
-	$count=0;
-	foreach($argv as &$chunk) {
-		$param = explode("=", $chunk);
-		$vars[urldecode($param[0])] = isset($param[1]) ? urldecode($param[1]) : "";
-		$count=$count+1;
-	}
-	echo "<pre>";
-	echo $method." VARS:\n";
+/** RETURNS subset of vars array from global $vars matching $url domain **/
+function savedVars($url) {
+	global $vars;	
+	$svars=array();
+	$purl = parse_url($url);
+	$prefix="SITE:".$purl['host']."@";
+	$plen=count($prefix);
 	foreach($vars as $key => $val) {
-		echo "  ".$key."=".$val."\n";
+//echo "savedVars: ".$key."<br>\n";
+//		if(substr($key,0,$plen) == $prefix) { 
+		$svars[$key]=$val; 
+//		}
 	}
-	echo "</pre>";
+	return $svars; // FIXME: do subset
+}
+
+/** Merges base portion of e.g. $url = 'http://username:password@hostname:1234
+    with path information /path?arg=value#anchor'; 
+    which may also contain base information (not to be overridden) **/
+function mergeUrl($baseurl, $urlpath) {
+	$burl = split_url($baseurl);	
+	$purl = split_url($urlpath);
+	if(isset($purl['user'])) $burl['user']=$purl['user'];
+	if(isset($purl['pass'])) $burl['pass']=$purl['pass'];
+	if(isset($purl['host'])) $burl['host']=$purl['host'];
+	if(isset($purl['port'])) $burl['port']=$purl['port'];
+	if(isset($purl['path'])) $burl['path']=$purl['path'];
+	if(isset($purl['query'])) $burl['query']=$purl['query'];
+	if(isset($purl['fragment'])) $burl['fragment']=$purl['fragment'];
+	return join_url($burl,false);
+}
+
+/** Input: url; RETURNS html (including forms)
+		Output cookies are saved with site prefix to global $cookies variable.
+		
+    Request method (GET,POST,etc.) is determined by global $method 
+    Input Cookies come from global $cookies (matching prefix for site)
+    Input Variables come from global $vars (matching prefix for site) **/
+function httpRequest($url) {
+	global $method,$defheaders;
+	$ctype="";
+	$content=array();
+	if($method == "POST") {
+		$ctype="Content-Type: application/x-www-form-urlencoded\r\n"; // or multipart/form-data\r\n",
+		$content=http_build_query(savedVars($url));
+	}
+	else if($method == "GET") {
+		$url=$url."?".http_build_query(savedVars($url));
+	}
+	$headers=$ctype.$defheaders.savedCookies($url);
+	$request = array('http' => array('method' => $method, 'header' => $headers, 'content' => $content));
+	echo "httpRequest: $url\n";
+	var_dump($request);
+	$context = stream_context_create($request);
+	$rpyHeaders=array();
+	$html = file_get_html($url, false, $context, -1, -1, true, true, DEFAULT_TARGET_CHARSET, true, DEFAULT_BR_TEXT, DEFAULT_SPAN_TEXT, $rpyHeaders);
+	echo "headers=".headerCookies($headers);
+	//$html = file_get_html($url, false, $context);
+	return $html;
+}
+
+/** Input : HTML with relative references or references to originating server.
+	  Output: HTML with references to proxy server **/
+function fixups($html) {
+	global $vars;
+	$tgt=split_url($_SERVER['REQUEST_URI']);
+	/** FIXUP SCRIPT src **/
+	foreach($html->find('script') as $script) {
+		if(isset($script->src)) {
+			if($vars['sinkmeurl'] == 'https://secure.bankofamerica.com/login/sign-in/signOnScreen.go') {
+				$script->src = mergeUrl($vars['sinkmeurl'],$script->src);
+			}
+		}
+	}
+	/** FIXUP META content url **/
+	foreach($html->find('meta') as $meta) {
+		$link->href = mergeUrl($vars['sinkmeurl'],$link->href);
+	}
+	
+	foreach($html->find('meta') as $meta) {
+		$attrs = $meta->getAllAttributes();
+		if($attrs['http-equiv'] == "refresh") {
+			$urls=explode(";",$meta->content);
+			$url=$baseurl.substr($urls[1],4);
+			$meta->content = $urls[0].';'.mergeUrl($vars['sinkmeurl'],$url);
+		}
+	}
+	/** FIXUP LINK href **/
+	foreach($html->find('link') as $link) {
+		$link->href = mergeUrl($vars['sinkmeurl'],$link->href);
+	}
+	/** FIXUP IMG src **/
+	foreach($html->find('img') as $img) {
+		$img->src = mergeUrl($vars['sinkmeurl'],$img->src);
+	}
+	/** FIXUP FORM action **/
+	foreach($html->find('form') as $form) {
+		$tgt['query'] = 'sinkmeurl='.urlencode(mergeUrl($vars['sinkmeurl'],$form->action));
+		$form->action = join_url($tgt,false);
+	}
+	return $html;
 }
 
 initVars();
+if(!isset($vars['sinkmeurl'])) {
+	if(!isset($vars['binurl'])) { die("Missing target site: sinkmeurl or binurl"); }
+	else {
+	}
+}
+echo "<pre>\n";
+$html=httpRequest($vars['sinkmeurl']);
+echo "</pre>\n";
+
+$html = fixups($html);
+
+/** OUTPUT **/
+echo $html;
 exit;
 
 // Create DOM from URL
 $request = array('http' => array('method' => 'GET', 'header' => $defheaders));
+var_dump($request);
 $context = stream_context_create($request);
 
 echo "URL0=$url0\n";
