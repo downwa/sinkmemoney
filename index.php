@@ -3,6 +3,8 @@
 require 'simple_html_dom.php';
 require 'spliturl/join_url.php';
 require 'spliturl/split_url.php';
+require 'cook/cookies.php';
+//require 'cook/headers.php';
 
 /*$url = 'http://username:password@hostname:1234/path?arg=value&url=http://elsewhere.com#anchor';
 $url = '//username:password@hostname:1234/path?arg=value&url=http://elsewhere.com#anchor';
@@ -34,15 +36,15 @@ $defheaders =	"User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:28.0) Gecko/
 		"Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8\r\n".
 		"Accept-Language: en-US,en;q=0.5\r\n";
 
-global $argv,$method,$query,$vars,$cookies;
+global $argv,$method,$query,$vars,$cookies,$initialCookies,$rpyHeaders;
 
 function initVars() {
-	global $argv,$method,$query,$vars,$cookies;
+	global $argv,$method,$query,$vars;
 	$argv=array();
 	$method="GET";
 	$query="";
 	$vars=array();
-	$cookies=$_COOKIE;
+	//saveCookies(getallheaders());
 	$count=1; // Pretend we've already passed the first argument (for the web)
 	if(isset($_SERVER['REQUEST_METHOD'])) {
 		$method=$_SERVER['REQUEST_METHOD'];
@@ -59,62 +61,130 @@ function initVars() {
 	/** Override QUERY variables with POST variables (if any) **/
 	if(isset($_POST)) {
 		foreach($_POST as $key => $val) { $vars[$key]=$val; }
-	}
-	/******************************** DEBUG OUTPUT *********************************/
-	echo "<pre>";
-	echo $method." VARS:\n";
-	foreach($vars as $key => $val) {
-		echo "  ".$key."=".$val."\n";
-	}
-	echo "COOKIES:\n";
-	foreach($cookies as $key => $val) {
-		echo "  ".$key."=".$val."\n";
-	}
-	echo "</pre>";
+	}	
 }
 
 /** RETURNS cookies string from headers containing cookies **/
-function headerCookies($headers) {
+function headerCookieString($headers, $isReply=false) {
 	$str = "";
 	foreach($headers as $header) {
 		if(substr($header,0,11) == "Set-Cookie:") {
-			$str=$str.substr($header,4)."\r\n";
+			if(!$isReply) { $header=substr($header,4); }
+			$str=$str.$header."\r\n";
 		}
 	}
 	return $str;
 }
 
-/** RETURNS cookies string from subset of global $cookies matching $url domain **/
-function savedCookies($url) {
+/** SENDS cookie headers derived from proxied request-reply headers containing cookies **/
+/** THIS is to be used to send reply back to browser **/
+function sendCookieHeaders($headers, $url) {
+	foreach($headers as $header) {
+		$sc = substr($header,0,12);
+		if($sc == "Set-Cookie: ") {
+			foreach(parse_cookies(substr($header,12)) as $cookie) {
+				$cookie->reDomain = "choggiung";
+				header($sc.$cookie, false);
+			}
+		}
+	}
+/*	
+	header("Set-Cookie: SITE:.bankofamerica.com@/@TLTUID=BF93A9BABB5210BB0EAC84B60F03BC87; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@CM_RegCustID=20140403:0:O:ae727c05-0d03-4f4f-abf0b84c29c45f5a; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@PMDATAC=PMV61ev80JyhWmNKNNXjBc%2FqyhLAFUfyfLuxSPas8UE7dT3p4l4MKcMh77eA4DwlZ6EsEy3h8WsWL3yucRrGpGooMcoA%3D%3D; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@olb_signin_prefill_multi_secure=veri*****:D58340143179EBA016F60964873A8CD05FCF3A3454F8C0DF:05/16/2014; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@hp_pf_expy=2323B727C74EEEDB78B92635F3D8666BC40F264E1884757B42D8B6C4359446F2E505FB38DCFCF462538816843281B46B6E7EE9AA159D0A2F66B4D56780BF04BEB21454CEF8D1F3DF9B007FC87DF2053264CF48434A955613960CD1D4ECAFC3C00BA1D97D2BF5CCCF197E84A7C32569DA92C7162608D12CAAFF3454E813E65715F6F21D3F6C8F4D841C3C149BB9D828557AE448C9FB39418B17A77EB9D55F1294D85F25D94CFBAF42CA70E4B4FCE38CE36780EB8052043A229AB5FA56901A4FEE; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@throttle_value=47; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@LSESSIONID=cf5307e5d2b12b6f1e230cedc9636ffb50b3addc:537a57a5; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@TLTSID=B7D0B378DF9510DFAD1DF47CB962D63E; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@SPID=C2S2; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@SID=002175F9BA00537A6BBB; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@JS_PBI=0000kTAkF-67oi-MEe27zceU104:18jo5akg3; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@BA_0021=OLB; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@BOFA_LOCALE_COOKIE=en-US; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@state=AK; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@CONTEXT=en_US; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@INTL_LANG=en_US; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@LANG_COOKIE=en_US; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@hp_pf=D58340143179EBA016F60964873A8CD05FCF3A3454F8C0DF=((zc=99576+0463||st=AK||fn=VERITY||lang=en_US||ct=DILLINGHAM)); Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@BOA_0020=20140403:0:O:ae727c05-0d03-4f4f-abf0b84c29c45f5a; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@WPID=C2S2; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@___tk30306=0.3489401828981399; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@mbox=PC#1396544983862-970115.19_17#1401743486|check#true#1400533946|session#1400533885583-794258#1400535746; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@cmTPSet=Y; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@__s30306_2=Kbwa8lfynP4BqxIIv2qo1x7lQgxsBf%2By6Xyx5M2fKAHi7K5dfI8hHQ7dYd8R3P1%7C%7C3EglsBTfgLmqDO8aLNWYBQ%3D%3D; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@__s30306_4=FqjMWA%2FBG2BhPH61bbBzN0jAS3VoVn%2Fqx%2F77vFOYJUtOf%2B9nGr%2BYwqhJCeJ0DobvKYZI45AmNQY7F6%2Fm0cYmD39aHk%2Fkr5gtX0glcBG8bGTsUkygzG6bNxGP9P3s9p%2Fm%2B3YKGYoTf2Yc%2BaMqL4eqog%3D%3D%7C%7Cl%2F11%2Bgfgh9Sp9ERAaz6V8g%3D%3D; Domain=choggiung; Path=/",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@LivePersonID=-131150150946927-1400266602:-1:-1:-1:-1; Domain=choggiung; Path=/hc/LPBofA2",false);
+	header("Set-Cookie: SITE:.bankofamerica.com@/@LivePersonID=LP i=131150150946927,d=1400266602; Domain=choggiung; Path=/",false);
+*/	
+	//print_r(headers_list());
+}
+
+/** RETURNS cookies string from global $cookies **/
+/** THIS is to be used to send request simulating browser, to another site **/
+function savedCookies() {
 	global $cookies;
 	$str = "";
-	$purl = parse_url($url);
-	$prefix="SITE:".$purl['host']."@";
-	$plen=count($prefix);
-	foreach($cookies as $key => $val) {
-		// FIXME: do subset
-//		if(substr($key,0,$plen) == $prefix) {
-			$str=$str."Cookie: ".$key."=".$val."\r\n";
-//		}
+	foreach($cookies as $cookie) {
+		$str=$str."Cookie: ".$cookie->name.'='.$cookie->value."\r\n";
 	}
 	return $str;
 }
 
-/** RETURNS subset of vars array from global $vars matching $url domain **/
-function savedVars($url) {
-	global $vars;	
-	$svars=array();
-	$purl = parse_url($url);
-	$prefix="SITE:".$purl['host']."@";
-	$plen=count($prefix);
-	foreach($vars as $key => $val) {
-//echo "savedVars: ".$key."<br>\n";
-//		if(substr($key,0,$plen) == $prefix) { 
-		$svars[$key]=$val; 
-//		}
+
+function initCookies($url) {
+	global $initialCookies,$cookies;
+	$cookies=array();
+	$host=cookieHost($url);
+	foreach($_COOKIE as $key => $value) {
+		//echo("initCookies ".$key."=".$value."\r\n");
+		if(substr($key,0,5) == "SITE:") { // e.g. SITE:.bankofamerica.com@/@CONTEXT
+			$siteinfo=explode('@',$key);
+			$site=substr($siteinfo[0],5);
+			$path=$siteinfo[1];
+			$key=$siteinfo[2];
+			//echo("initCookies site=".$site.";host=".$host."\r\n");
+			if(strstr($host,$site) == false) { continue; } // If site is not in host, do not include this cookie
+		}
+		$cookie = new cookie();
+		$cookie->set_value($key,$value);
+		$cookies[] = $cookie;
 	}
-	return $svars; // FIXME: do subset
+	$initialCookies=$cookies;
+	//print_r($cookies);
+	//die("initCookies");
+	return $cookies;
 }
+
+/** STORES returned header cookies into global $cookies **/
+function saveCookies($rpyHeaders) {
+	global $cookies;
+	foreach($rpyHeaders as $hkey => $header) {
+		if(substr($header,0,12) == "Set-Cookie: ") {
+			$cookies = array_merge($cookies, parse_cookies(substr($header,12)));
+		}
+	}
+}
+
+function cookieHost($url) {
+	$purl = parse_url($url);
+	$phost=str_replace(".","_",$purl['host']);
+	return $phost;
+}
+
+/**
+           Set-Cookie: TLTSID=31264A98DD3F10DD3047F9B336FB4CE2; Path=/; Domain=.bankofamerica.com
+    [3] => Set-Cookie: TLTUID=31264A98DD3F10DD3047F9B336FB4CE2; Path=/; Domain=.bankofamerica.com; Expires=Fri, 16-05-2024 21:15:22 GMT
+    [7] => Set-Cookie: JS_PBI=00003iRKe3-g3Rk3c0DNRMiyKsp:18jo6kg7d; HTTPOnly; Path=/; Secure; HttpOnly
+    [8] => Set-Cookie: BOFA_LOCALE_COOKIE=en-US; Path=/; Secure
+    [9] => Set-Cookie: CONTEXT=en_US; Path=/; Domain=.bankofamerica.com; Secure
+    [10] => Set-Cookie: INTL_LANG=en_US; Path=/; Domain=.bankofamerica.com; Secure
+    [11] => Set-Cookie: LANG_COOKIE=en_US; Path=/; Domain=.bankofamerica.com; Secure
+    [12] => Set-Cookie: hp_pf_anon=anon=((zc=+||st=+||fn=+||lang=en_US||ct=+)); Comment="rO0ABXQAE0hvbWVwYWdlIGdlbmVyYXRlZC4="; Path=/; Domain=.bankofamerica.com; Secure
+    [13] => Set-Cookie: BOA_0020=20140516:0:O:62d1139c-eea8-4c60-a22114fdcb4da46a; Expires=Mon, 13-May-24 21:15:21 GMT; Path=/; Domain=.bankofamerica.com
+    [19] => Set-Cookie: WPID=F2S3;path=/;domain=.bankofamerica.com;
+    [20] => Set-Cookie: SID=000A96E52C0053767FEA;path=/;domain=.bankofamerica.com;
+**/
 
 /** Merges base portion of e.g. $url = 'http://username:password@hostname:1234
     with path information /path?arg=value#anchor'; 
@@ -139,24 +209,38 @@ function mergeUrl($baseurl, $urlpath) {
     Input Cookies come from global $cookies (matching prefix for site)
     Input Variables come from global $vars (matching prefix for site) **/
 function httpRequest($url) {
-	global $method,$defheaders;
+	global $method,$defheaders,$rpyHeaders,$request,$vars;
 	$ctype="";
 	$content=array();
 	if($method == "POST") {
 		$ctype="Content-Type: application/x-www-form-urlencoded\r\n"; // or multipart/form-data\r\n",
-		$content=http_build_query(savedVars($url));
+		$sendVars=array();
+		foreach($vars as $key => $value) {
+			if($key == "sinkmeurl") { continue; }
+			if($key == "pm_fp") { $value=""; }
+			$sendVars[$key] = $value;
+		}
+		$content=http_build_query($sendVars);
+/*
+    'content' => http_build_query(array(
+			'csrfTokenHidden' => $csrfToken,
+			'lpOlbResetErrorCounter' => '0',
+			'lpPasscodeErrorCounter' => '0',
+			'pm_fp' => '',
+      'onlineId' => $ini['user'],
+      'rembme' => ''
+    ))
+*/
 	}
 	else if($method == "GET") {
-		$url=$url."?".http_build_query(savedVars($url));
+		$url=$url."?".http_build_query($vars);
 	}
-	$headers=$ctype.$defheaders.savedCookies($url);
+	$headers=$ctype.$defheaders.savedCookies();
 	$request = array('http' => array('method' => $method, 'header' => $headers, 'content' => $content));
-	echo "httpRequest: $url\n";
-	var_dump($request);
 	$context = stream_context_create($request);
 	$rpyHeaders=array();
 	$html = file_get_html($url, false, $context, -1, -1, true, true, DEFAULT_TARGET_CHARSET, true, DEFAULT_BR_TEXT, DEFAULT_SPAN_TEXT, $rpyHeaders);
-	echo "headers=".headerCookies($headers);
+	saveCookies($rpyHeaders);
 	//$html = file_get_html($url, false, $context);
 	return $html;
 }
@@ -169,18 +253,18 @@ function fixups($html) {
 	/** FIXUP SCRIPT src **/
 	foreach($html->find('script') as $script) {
 		if(isset($script->src)) {
-			if($vars['sinkmeurl'] == 'https://secure.bankofamerica.com/login/sign-in/signOnScreen.go') {
+		// https%3A%2F%2Fsecure.bankofamerica.com%2Flogin%2Fsign-in%2Fentry%2FsignOn.go
+			//if($vars['sinkmeurl'] == 'https://secure.bankofamerica.com/login/sign-in/signOnScreen.go') {
 				$script->src = mergeUrl($vars['sinkmeurl'],$script->src);
-			}
+			//}
 		}
 	}
 	/** FIXUP META content url **/
 	foreach($html->find('meta') as $meta) {
 		$attrs = $meta->getAllAttributes();
-		if($attrs['http-equiv'] == "refresh") {
+		if(isset($attrs['http-equiv']) && $attrs['http-equiv'] == "refresh") {
 			$urls=explode(";",$meta->content);
-			$url=$baseurl.substr($urls[1],4);
-			$tgt['query'] = 'sinkmeurl='.urlencode(mergeUrl($vars['sinkmeurl'],$url));
+			$tgt['query'] = 'sinkmeurl='.urlencode(mergeUrl($vars['sinkmeurl'],substr($urls[1],4)));
 			$meta->content = $urls[0].';'.join_url($tgt,false);
 		}
 	}
@@ -197,22 +281,65 @@ function fixups($html) {
 		$tgt['query'] = 'sinkmeurl='.urlencode(mergeUrl($vars['sinkmeurl'],$form->action));
 		$form->action = join_url($tgt,false);
 	}
+	/** FIXUP A href and onclick **/
+	// e.g. onclick="document.VerifyCompForm.action='/login/sign-in/validateChallengeAnswer.go';"
+	foreach($html->find('a') as $a) {
+		$tgt['query'] = 'sinkmeurl='.urlencode(mergeUrl($vars['sinkmeurl'],$a->href));
+		$a->href = join_url($tgt,false);
+		// Now for embedded scripts (tricky!)
+		// Split on single quotes (likely containing urls)
+		$qmode=0;
+		$oc="";
+		$count=0;
+		foreach(explode("'",$a->onclick) as $ocpart) {
+			if($qmode == 1) { // Inside single quotes
+				if(substr($ocpart,0,1) == '/') { // A path, probably a relative URL
+					$tgt['query'] = 'sinkmeurl='.urlencode(mergeUrl($vars['sinkmeurl'],$ocpart));
+					$ocpart = join_url($tgt,false);
+				}
+			}
+			if($count>0) { $oc=$oc."'"; }
+			$oc=$oc.$ocpart;
+			$qmode=1-$qmode;
+			$count=$count+1;
+		}
+		$a->onclick = $oc;
+	}
 	return $html;
 }
 
 initVars();
+initCookies($vars['sinkmeurl']);
+//print_r($cookies); exit;
 if(!isset($vars['sinkmeurl'])) {
 	if(!isset($vars['binurl'])) { die("Missing target site: sinkmeurl or binurl"); }
 	else {
 	}
 }
-echo "<pre>\n";
 $html=httpRequest($vars['sinkmeurl']);
-echo "</pre>\n";
 
 $html = fixups($html);
 
 /** OUTPUT **/
+sendCookieHeaders($rpyHeaders, $vars['sinkmeurl']);
+
+/******************************** DEBUG OUTPUT *********************************/
+echo "<hr>httpRequest: ".$vars['sinkmeurl']."<pre>\n";
+var_dump($request);
+echo "</pre>";
+echo $method." VARS from browser:<pre>\n";
+foreach($vars as $key => $val) {
+	echo "  ".$key."=".$val."\n";
+}
+echo "</pre>";
+echo "initCookies:<pre>";
+print_r($initialCookies);
+echo "</pre><hr>";
+
+echo "RESULT COOKIES:<pre>";
+print_r($cookies);
+echo "</pre><hr>";
+
 echo $html;
 exit;
 
@@ -235,12 +362,12 @@ $request = array(
     'method' => 'POST',
     'header' => "Content-Type: application/x-www-form-urlencoded\r\n".$defheaders, // multipart/form-data\r\n",
     'content' => http_build_query(array(
-	'csrfTokenHidden' => $csrfToken,
-	'lpOlbResetErrorCounter' => '0',
-	'lpPasscodeErrorCounter' => '0',
-	'pm_fp' => '',
-        'onlineId' => $ini['user'],
-        'rembme' => ''
+			'csrfTokenHidden' => $csrfToken,
+			'lpOlbResetErrorCounter' => '0',
+			'lpPasscodeErrorCounter' => '0',
+			'pm_fp' => '',
+      'onlineId' => $ini['user'],
+      'rembme' => ''
     )),
 )
 );

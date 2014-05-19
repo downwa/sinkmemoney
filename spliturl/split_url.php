@@ -130,8 +130,8 @@
  * 	the associative array of URL parts, or FALSE if the URL is
  * 	too malformed to recognize any parts.
  */
-function split_url( $url, $decode=TRUE )
-{
+function split_url( $url, $decode=TRUE ) {
+	$parts=array();
 	// Character sets from RFC3986.
 	$xunressub     = 'a-zA-Z\d\-._~\!$&\'()*+,;=';
 	$xpchar        = $xunressub . ':@%';
