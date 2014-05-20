@@ -10,6 +10,6 @@ checkout:
 checkin: # e.g. downwa
 	#git push -v origin master
 	#git push -v https://downwa@github.com/downwa/radioplay master
-	git add -v *
+	git add -v .
 	git commit -v
 	git push
